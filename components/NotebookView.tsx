@@ -1,16 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VocabItem, ChatMessage } from '../types';
-import { Trash2, Plus, Loader2, MessageCircle, Play, Sparkles, X, ChevronRight, RotateCw, Send, Search, LayoutGrid, Layers, BookOpen } from 'lucide-react';
+import { Trash2, Plus, Loader2, MessageCircle, Play, Sparkles, X, RotateCw, Send, Search, LayoutGrid, Layers, BookOpen, Clock, BrainCircuit, CheckCircle } from 'lucide-react';
 import { AudioPlayerService } from '../services/audioUtils';
 import { generateAudio, generateStoryFromWords, chatAboutWord, generateWordImage } from '../services/geminiService';
+import { getDueItems, processReview, getReviewStats } from '../services/spacedRepetition';
 
 interface NotebookViewProps {
   vocabList: VocabItem[];
   onRemoveWord: (id: string) => void;
   onManualAdd: (text: string) => Promise<void>;
+  onUpdateWord: (item: VocabItem) => void;
 }
 
-const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, onManualAdd }) => {
+const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, onManualAdd, onUpdateWord }) => {
   const [activeTab, setActiveTab] = useState<'notebook' | 'flashcards' | 'story'>('notebook');
   
   // --- List State ---
@@ -29,11 +31,13 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
   const [story, setStory] = useState<{title: string, content: string} | null>(null);
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
 
-  // --- Flashcard State ---
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
+  // --- Flashcard SRS State ---
+  const [reviewQueue, setReviewQueue] = useState<VocabItem[]>([]);
+  const [currentReviewItem, setCurrentReviewItem] = useState<VocabItem | null>(null);
   const [isFlipped, setIsFlipped] = useState(false);
   const [cardImage, setCardImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [stats, setStats] = useState({ due: 0, learning: 0, mastered: 0, total: 0 });
 
   const sortedList = [...vocabList]
     .filter(v => v.word.toLowerCase().includes(filterText.toLowerCase()) || v.translation.includes(filterText))
@@ -44,14 +48,17 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, chatWord]);
 
-  // Reset states when switching tabs
+  // Init Flashcards
   useEffect(() => {
     if (activeTab === 'flashcards') {
-      setCurrentCardIndex(0);
+      const due = getDueItems(vocabList);
+      setReviewQueue(due);
+      setCurrentReviewItem(due[0] || null);
+      setStats(getReviewStats(vocabList));
       setIsFlipped(false);
       setCardImage(null);
     }
-  }, [activeTab]);
+  }, [activeTab, vocabList]);
 
   // -- Handlers --
 
@@ -104,32 +111,37 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
     setIsGeneratingStory(false);
   };
 
-  const handleFlipCard = async () => {
-    setIsFlipped(!isFlipped);
-  };
-
-  const handleNextCard = () => {
-    setIsFlipped(false);
-    setCardImage(null);
-    setTimeout(() => {
-      setCurrentCardIndex((prev) => (prev + 1) % sortedList.length);
-    }, 200);
-  };
-
-  const handlePrevCard = () => {
-    setIsFlipped(false);
-    setCardImage(null);
-    setTimeout(() => {
-      setCurrentCardIndex((prev) => (prev - 1 + sortedList.length) % sortedList.length);
-    }, 200);
-  };
-
   const handleGenerateImage = async (item: VocabItem) => {
     if (isGeneratingImage || cardImage) return;
     setIsGeneratingImage(true);
     const b64 = await generateWordImage(item.visualPrompt || item.word);
     if (b64) setCardImage(`data:image/png;base64,${b64}`);
     setIsGeneratingImage(false);
+  };
+
+  // SRS Handlers
+  const handleRateCard = (quality: number) => {
+    if (!currentReviewItem) return;
+    
+    // Calculate new state
+    const updatedItem = processReview(currentReviewItem, quality);
+    onUpdateWord(updatedItem);
+
+    // Animate out
+    setIsFlipped(false);
+    setCardImage(null);
+    
+    // Move to next
+    const nextQueue = reviewQueue.slice(1);
+    setReviewQueue(nextQueue);
+    setCurrentReviewItem(nextQueue[0] || null);
+  };
+
+  const handleCramSession = () => {
+    // Force review all items shuffled
+    const shuffled = [...vocabList].sort(() => Math.random() - 0.5);
+    setReviewQueue(shuffled);
+    setCurrentReviewItem(shuffled[0]);
   };
 
   return (
@@ -235,6 +247,19 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
                       <p className="text-amber-700 font-bold mb-2">{item.translation}</p>
                       <p className="text-sm text-gray-600 mb-4 leading-relaxed flex-grow">{item.explanation}</p>
                       
+                      {/* SRS Indicator */}
+                      <div className="flex items-center gap-2 mb-4 text-[10px] uppercase font-bold tracking-wider text-gray-400">
+                         {item.learningState && item.learningState.repetition > 0 ? (
+                            <span className="text-green-600 flex items-center gap-1">
+                               <BrainCircuit className="w-3 h-3" /> Learned ({item.learningState.repetition})
+                            </span>
+                         ) : (
+                            <span className="text-gray-400 flex items-center gap-1">
+                               <Clock className="w-3 h-3" /> New
+                            </span>
+                         )}
+                      </div>
+
                       <div className="space-y-3 pt-4 border-t border-gray-100 bg-gray-50/50 -mx-6 -mb-6 p-6 rounded-b-2xl">
                         {item.examples.map((ex, idx) => (
                           <div key={idx} className="flex gap-3 items-start group/ex">
@@ -257,35 +282,42 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
 
           {/* === FLASHCARDS VIEW === */}
           {activeTab === 'flashcards' && (
-            <div className="h-full flex flex-col items-center justify-center min-h-[600px]">
-               {sortedList.length === 0 ? (
-                  <div className="text-center text-gray-400">Add words to list first.</div>
+            <div className="h-full flex flex-col items-center">
+               
+               {/* SRS Stats */}
+               <div className="flex gap-4 mb-8 bg-white p-2 rounded-full shadow-sm border border-gray-100 text-xs font-medium">
+                  <div className="px-3 py-1 bg-red-50 text-red-600 rounded-full">{stats.due} Due</div>
+                  <div className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full">{stats.learning} Learning</div>
+                  <div className="px-3 py-1 bg-green-50 text-green-600 rounded-full">{stats.mastered} Mastered</div>
+               </div>
+
+               {/* Review Area */}
+               {!currentReviewItem ? (
+                 <div className="flex-1 flex flex-col items-center justify-center text-center max-w-md animate-fade-in">
+                    <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6 text-green-600 shadow-sm">
+                       <CheckCircle className="w-12 h-12" />
+                    </div>
+                    <h2 className="text-2xl font-serif font-bold text-gray-900 mb-2">You're all caught up!</h2>
+                    <p className="text-gray-500 mb-8">You've finished all your due cards for today. Great job!</p>
+                    <button 
+                       onClick={handleCramSession}
+                       className="px-6 py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-colors"
+                    >
+                       Review All Anyway
+                    </button>
+                 </div>
                ) : (
                  <div className="relative w-full max-w-lg aspect-[3/4] md:aspect-[4/3] perspective-1000 group">
                    
-                   {/* Navigation Controls */}
-                   <button 
-                      onClick={(e) => { e.stopPropagation(); handlePrevCard(); }}
-                      className="absolute left-[-60px] top-1/2 -translate-y-1/2 p-4 bg-white rounded-full shadow-lg text-gray-400 hover:text-indigo-600 hover:scale-110 transition-all z-20 hidden md:block"
-                   >
-                     <ChevronRight className="w-6 h-6 rotate-180" />
-                   </button>
-                   <button 
-                      onClick={(e) => { e.stopPropagation(); handleNextCard(); }}
-                      className="absolute right-[-60px] top-1/2 -translate-y-1/2 p-4 bg-white rounded-full shadow-lg text-gray-400 hover:text-indigo-600 hover:scale-110 transition-all z-20 hidden md:block"
-                   >
-                     <ChevronRight className="w-6 h-6" />
-                   </button>
-
-                   <div 
-                      onClick={handleFlipCard}
-                      className={`relative w-full h-full duration-700 transform-style-3d transition-transform cursor-pointer ${isFlipped ? 'rotate-y-180' : ''}`}
-                    >
+                   <div className={`relative w-full h-full duration-500 transform-style-3d transition-transform ${isFlipped ? 'rotate-y-180' : ''}`}>
                       
                       {/* FRONT */}
-                      <div className="absolute w-full h-full bg-white rounded-3xl shadow-2xl border border-gray-100 p-12 flex flex-col items-center justify-center backface-hidden z-10">
+                      <div 
+                         onClick={() => setIsFlipped(true)}
+                         className="absolute w-full h-full bg-white rounded-3xl shadow-xl border border-gray-100 p-12 flex flex-col items-center justify-center backface-hidden z-10 cursor-pointer hover:shadow-2xl transition-shadow"
+                      >
                          <div className="absolute top-6 right-8 text-sm font-bold text-gray-300 bg-gray-50 px-3 py-1 rounded-full">
-                            {currentCardIndex + 1} / {sortedList.length}
+                            {reviewQueue.length} remaining
                          </div>
                          
                          <div className="flex-1 flex flex-col items-center justify-center text-center w-full">
@@ -293,7 +325,7 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
                                <img src={cardImage} alt="concept" className="w-48 h-48 md:w-64 md:h-64 object-cover rounded-2xl mb-8 border-4 border-amber-50 shadow-inner" />
                             ) : (
                                <div className="w-48 h-48 md:w-64 md:h-64 bg-amber-50 rounded-2xl flex items-center justify-center mb-8 relative overflow-hidden group/img transition-colors hover:bg-amber-100"
-                                    onClick={(e) => { e.stopPropagation(); handleGenerateImage(sortedList[currentCardIndex]); }}
+                                    onClick={(e) => { e.stopPropagation(); handleGenerateImage(currentReviewItem); }}
                                >
                                   {isGeneratingImage ? (
                                     <Loader2 className="w-10 h-10 text-amber-500 animate-spin" />
@@ -305,28 +337,28 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
                                   )}
                                </div>
                             )}
-                            <h2 className="text-5xl md:text-6xl font-serif font-bold text-gray-900 mb-6">{sortedList[currentCardIndex].word}</h2>
+                            <h2 className="text-5xl md:text-6xl font-serif font-bold text-gray-900 mb-6">{currentReviewItem.word}</h2>
                             <button 
-                              onClick={(e) => { e.stopPropagation(); playAudio(sortedList[currentCardIndex].word); }}
+                              onClick={(e) => { e.stopPropagation(); playAudio(currentReviewItem.word); }}
                               className="p-4 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm hover:shadow-md"
                             >
                                <Play className="w-6 h-6 fill-current" />
                             </button>
                          </div>
-                         <p className="text-sm text-gray-400 mt-4 font-medium uppercase tracking-wide">Click card to reveal meaning</p>
+                         <p className="text-sm text-gray-400 mt-4 font-medium uppercase tracking-wide">Tap to flip</p>
                       </div>
 
                       {/* BACK */}
-                      <div className="absolute w-full h-full bg-gray-900 rounded-3xl shadow-2xl p-12 flex flex-col backface-hidden rotate-y-180 text-white">
+                      <div className="absolute w-full h-full bg-gray-900 rounded-3xl shadow-xl p-8 md:p-12 flex flex-col backface-hidden rotate-y-180 text-white">
                           <div className="flex-1 flex flex-col justify-center">
-                             <div className="text-center mb-8">
-                                <h3 className="text-4xl font-bold text-amber-400 mb-4">{sortedList[currentCardIndex].translation}</h3>
-                                <p className="text-lg text-gray-300 italic font-light leading-relaxed max-w-lg mx-auto">"{sortedList[currentCardIndex].explanation}"</p>
+                             <div className="text-center mb-6">
+                                <h3 className="text-4xl font-bold text-amber-400 mb-4">{currentReviewItem.translation}</h3>
+                                <p className="text-lg text-gray-300 italic font-light leading-relaxed max-w-lg mx-auto">"{currentReviewItem.explanation}"</p>
                              </div>
                              
-                             <div className="space-y-4 bg-gray-800/50 p-6 rounded-2xl">
-                                {sortedList[currentCardIndex].examples.map((ex, i) => (
-                                  <div key={i} className="flex gap-4 items-start">
+                             <div className="space-y-3 bg-gray-800/50 p-4 rounded-2xl mb-6">
+                                {currentReviewItem.examples.map((ex, i) => (
+                                  <div key={i} className="flex gap-4 items-start text-left">
                                      <button 
                                         onClick={(e) => { e.stopPropagation(); playAudio(ex.english); }}
                                         className="mt-1 text-indigo-400 hover:text-white transition-colors"
@@ -334,11 +366,31 @@ const NotebookView: React.FC<NotebookViewProps> = ({ vocabList, onRemoveWord, on
                                         <Play className="w-4 h-4 fill-current" />
                                      </button>
                                      <div>
-                                       <p className="text-lg text-white font-medium leading-snug">{ex.english}</p>
-                                       <p className="text-sm text-gray-500 mt-1">{ex.chinese}</p>
+                                       <p className="text-base text-white font-medium leading-snug">{ex.english}</p>
+                                       <p className="text-xs text-gray-500 mt-1">{ex.chinese}</p>
                                      </div>
                                   </div>
                                 ))}
+                             </div>
+
+                             {/* SRS Controls */}
+                             <div className="grid grid-cols-4 gap-2">
+                                <button onClick={() => handleRateCard(1)} className="flex flex-col items-center p-2 rounded-xl bg-red-900/40 hover:bg-red-900/60 border border-red-500/30 transition-colors">
+                                  <span className="font-bold text-red-300 text-sm">Again</span>
+                                  <span className="text-[10px] text-red-200/50">1m</span>
+                                </button>
+                                <button onClick={() => handleRateCard(3)} className="flex flex-col items-center p-2 rounded-xl bg-orange-900/40 hover:bg-orange-900/60 border border-orange-500/30 transition-colors">
+                                  <span className="font-bold text-orange-300 text-sm">Hard</span>
+                                  <span className="text-[10px] text-orange-200/50">2d</span>
+                                </button>
+                                <button onClick={() => handleRateCard(4)} className="flex flex-col items-center p-2 rounded-xl bg-green-900/40 hover:bg-green-900/60 border border-green-500/30 transition-colors">
+                                  <span className="font-bold text-green-300 text-sm">Good</span>
+                                  <span className="text-[10px] text-green-200/50">4d</span>
+                                </button>
+                                <button onClick={() => handleRateCard(5)} className="flex flex-col items-center p-2 rounded-xl bg-blue-900/40 hover:bg-blue-900/60 border border-blue-500/30 transition-colors">
+                                  <span className="font-bold text-blue-300 text-sm">Easy</span>
+                                  <span className="text-[10px] text-blue-200/50">7d</span>
+                                </button>
                              </div>
                           </div>
                       </div>

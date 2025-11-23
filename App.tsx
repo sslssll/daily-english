@@ -166,6 +166,10 @@ const App: React.FC = () => {
     setVocabList(prev => prev.filter(item => item.id !== id));
   };
 
+  const handleUpdateVocab = (updatedItem: VocabItem) => {
+    setVocabList(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+  };
+
   const handleAnalyzeArticle = async () => {
     if (!currentArticle) return;
     
@@ -338,6 +342,7 @@ const App: React.FC = () => {
               vocabList={vocabList}
               onRemoveWord={handleRemoveVocab}
               onManualAdd={handleManualAddVocab}
+              onUpdateWord={handleUpdateVocab}
             />
           )}
 

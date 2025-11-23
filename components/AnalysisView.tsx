@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArticleAnalysis } from '../types';
-import { BookOpen, Layers, Info, ArrowLeft } from 'lucide-react';
+import { BookOpen, Layers, Info, ArrowLeft, Download } from 'lucide-react';
 
 interface AnalysisViewProps {
   analysis: ArticleAnalysis;
@@ -9,6 +9,36 @@ interface AnalysisViewProps {
 
 const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis, onBack }) => {
   const [activeTab, setActiveTab] = useState<'sentences' | 'grammar'>('sentences');
+
+  const handleDownload = () => {
+    let content = `# Article Deep Analysis\n\n`;
+    
+    content += `## Sentence Breakdown\n\n`;
+    analysis.sentences.forEach((s, i) => {
+      content += `${i + 1}. ${s.original}\n   Translation: ${s.translation}\n`;
+      if (s.isComplex && s.grammarNotes) {
+        content += `   Analysis: ${s.grammarNotes}\n`;
+      }
+      content += `\n`;
+    });
+
+    content += `## Grammar Points\n\n`;
+    analysis.grammarPoints.forEach((gp) => {
+      content += `### ${gp.point}\n${gp.explanation}\n`;
+      gp.sentences.forEach(s => content += `- "${s}"\n`);
+      content += `\n`;
+    });
+
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analysis_report.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
@@ -24,22 +54,35 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis, onBack }) => {
           </div>
         </div>
         
-        <div className="flex bg-gray-100 p-1 rounded-lg">
+        <div className="flex items-center gap-3">
+          <div className="flex bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab('sentences')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                activeTab === 'sentences' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" /> <span className="hidden sm:inline">Sentences</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('grammar')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                activeTab === 'grammar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Layers className="w-4 h-4" /> <span className="hidden sm:inline">Grammar</span>
+            </button>
+          </div>
+          
+          <div className="h-8 w-px bg-gray-200 hidden sm:block"></div>
+
           <button
-            onClick={() => setActiveTab('sentences')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
-              activeTab === 'sentences' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
+            onClick={handleDownload}
+            className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-medium"
+            title="Download Report"
           >
-            <BookOpen className="w-4 h-4" /> Sentence Breakdown
-          </button>
-          <button
-            onClick={() => setActiveTab('grammar')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${
-              activeTab === 'grammar' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Layers className="w-4 h-4" /> Grammar Points
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export</span>
           </button>
         </div>
       </div>

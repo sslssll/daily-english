@@ -34,6 +34,13 @@ export interface ArticleAnalysis {
   grammarPoints: GrammarPoint[];
 }
 
+export interface LearningState {
+  repetition: number; // n: count of consecutive successful recalls
+  interval: number; // I: days until next review
+  easeFactor: number; // EF: multiplier (starts at 2.5)
+  nextReview: number; // timestamp of next review
+}
+
 export interface VocabItem {
   id: string;
   word: string;
@@ -46,6 +53,7 @@ export interface VocabItem {
     chinese: string;
   }[];
   addedAt: number;
+  learningState?: LearningState; // Optional for backward compatibility
 }
 
 export interface UserHistory {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Article, VocabItem } from '../types';
 import { generateArticleAudio, defineWord } from '../services/geminiService';
 import { AudioPlayerService } from '../services/audioUtils';
-import { Play, Pause, Loader2, Plus, BrainCircuit } from 'lucide-react';
+import { Play, Pause, Loader2, Plus, BrainCircuit, Download, FileText, Headphones } from 'lucide-react';
 
 interface ArticleReaderProps {
   article: Article;
@@ -49,6 +49,32 @@ const ArticleReader: React.FC<ArticleReaderProps> = ({ article, onAddVocab, onAn
       setAudioState({ loading: false, playing: false });
       alert("无法生成音频，请稍后再试。");
     }
+  };
+
+  const handleDownloadText = () => {
+    const textContent = `Title: ${article.title}\nDate: ${article.date}\nLevel: ${article.difficulty}\n\n${article.content}`;
+    const blob = new Blob([textContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${article.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadAudio = () => {
+    if (!audioData) return;
+    const blob = AudioPlayerService.getWavBlob(audioData);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${article.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleWordClick = (e: React.MouseEvent<HTMLParagraphElement>) => {
@@ -101,21 +127,44 @@ const ArticleReader: React.FC<ArticleReaderProps> = ({ article, onAddVocab, onAn
   return (
     <div className="max-w-3xl mx-auto p-8 relative">
       {/* Article Header & Controls */}
-      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-gray-100 py-4 mb-8 flex justify-between items-center">
+      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-gray-100 py-4 mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
            <div className="flex items-center gap-2 mb-1">
              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wide">{article.difficulty} Level</span>
              <span className="text-xs text-gray-400">{article.date}</span>
            </div>
-           <h1 className="text-3xl font-serif font-bold text-gray-900 leading-tight">{article.title}</h1>
+           <h1 className="text-2xl md:text-3xl font-serif font-bold text-gray-900 leading-tight">{article.title}</h1>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          {/* Download Text */}
+          <button
+            onClick={handleDownloadText}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+            title="Download Article Text"
+          >
+            <FileText className="w-5 h-5" />
+          </button>
+
+          {/* Download Audio */}
+          <button
+            onClick={handleDownloadAudio}
+            disabled={!audioData}
+            className={`p-2 rounded-full transition-colors ${
+              audioData 
+                ? 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50' 
+                : 'text-gray-200 cursor-not-allowed'
+            }`}
+            title={audioData ? "Download Audio (WAV)" : "Generate audio first to download"}
+          >
+            <Download className="w-5 h-5" />
+          </button>
+
           {/* Analyze Button */}
           <button
             onClick={onAnalyze}
             disabled={isAnalyzing}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors font-medium text-sm"
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors font-medium text-sm ml-2"
           >
             {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BrainCircuit className="w-4 h-4" />}
             <span className="hidden sm:inline">Deep Analysis</span>
@@ -125,7 +174,7 @@ const ArticleReader: React.FC<ArticleReaderProps> = ({ article, onAddVocab, onAn
           <button 
             onClick={handlePlayAudio}
             disabled={audioState.loading}
-            className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 transition-all hover:scale-105 disabled:bg-gray-300"
+            className="flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 transition-all hover:scale-105 disabled:bg-gray-300 ml-2"
           >
             {audioState.loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />

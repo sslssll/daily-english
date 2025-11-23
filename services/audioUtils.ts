@@ -30,6 +30,12 @@ async function decodeAudioData(
   return buffer;
 }
 
+function writeString(view: DataView, offset: number, string: string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
 let audioContext: AudioContext | null = null;
 let currentSource: AudioBufferSourceNode | null = null;
 
@@ -78,5 +84,52 @@ export const AudioPlayerService = {
       // AudioContext based playback is harder to "pause/resume" exactly without tracking time.
       // For simplicity in this demo, we handle stop/start. 
       // Real resumption requires tracking `startTime` and `offset`.
+  },
+
+  getWavBlob(base64Audio: string, sampleRate: number = 24000): Blob {
+    const bytes = decodeBase64(base64Audio);
+    const len = bytes.length;
+    
+    // WAV Header parameters (16-bit PCM, Mono)
+    const numChannels = 1;
+    const byteRate = sampleRate * numChannels * 2; // 16-bit = 2 bytes
+    const blockAlign = numChannels * 2;
+    const dataSize = len;
+    
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    
+    // RIFF identifier
+    writeString(view, 0, 'RIFF');
+    // file length
+    view.setUint32(4, 36 + dataSize, true);
+    // RIFF type
+    writeString(view, 8, 'WAVE');
+    // format chunk identifier
+    writeString(view, 12, 'fmt ');
+    // format chunk length
+    view.setUint32(16, 16, true);
+    // sample format (1 = PCM)
+    view.setUint16(20, 1, true);
+    // channel count
+    view.setUint16(22, numChannels, true);
+    // sample rate
+    view.setUint32(24, sampleRate, true);
+    // byte rate (sample rate * block align)
+    view.setUint32(28, byteRate, true);
+    // block align (channel count * bytes per sample)
+    view.setUint16(32, blockAlign, true);
+    // bits per sample
+    view.setUint16(34, 16, true);
+    // data chunk identifier
+    writeString(view, 36, 'data');
+    // data chunk length
+    view.setUint32(40, dataSize, true);
+    
+    // write the PCM samples
+    const pcmData = new Uint8Array(buffer, 44);
+    pcmData.set(bytes);
+    
+    return new Blob([buffer], { type: 'audio/wav' });
   }
 };

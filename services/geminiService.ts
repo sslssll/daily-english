@@ -179,7 +179,13 @@ export const defineWord = async (word: string, contextSentence?: string): Promis
       explanation: data.explanation || "No explanation available.",
       visualPrompt: data.visualPrompt || "Abstract shapes",
       examples: data.examples || [],
-      addedAt: Date.now()
+      addedAt: Date.now(),
+      learningState: {
+        repetition: 0,
+        interval: 0,
+        easeFactor: 2.5,
+        nextReview: Date.now()
+      }
     };
   } catch (e) {
     console.error("Definition error", e);
@@ -190,7 +196,13 @@ export const defineWord = async (word: string, contextSentence?: string): Promis
       explanation: "Could not retrieve definition.",
       visualPrompt: "Question mark",
       examples: [],
-      addedAt: Date.now()
+      addedAt: Date.now(),
+      learningState: {
+        repetition: 0,
+        interval: 0,
+        easeFactor: 2.5,
+        nextReview: Date.now()
+      }
     };
   }
 };
