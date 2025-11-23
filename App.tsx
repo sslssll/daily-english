@@ -6,14 +6,20 @@ import ArticleReader from './components/ArticleReader';
 import SidebarLeft from './components/SidebarLeft';
 import NotebookView from './components/NotebookView';
 import AnalysisView from './components/AnalysisView';
-import { Menu, X, Check } from 'lucide-react';
+import SettingsView from './components/SettingsView';
+import LoginView from './components/LoginView';
+import AccessGate from './components/AccessGate';
+import { Menu, Check } from 'lucide-react';
 
 const STORAGE_KEY_HISTORY = 'english_app_history';
 const STORAGE_KEY_VOCAB = 'english_app_vocab';
+const SESSION_ACCESS_KEY = 'site_access_granted';
 
 const App: React.FC = () => {
+  const [hasSiteAccess, setHasSiteAccess] = useState(false);
   const [appState, setAppState] = useState<AppState>(AppState.LOADING);
   const [currentView, setCurrentView] = useState<AppView>('READING');
+  const [isLocked, setIsLocked] = useState(false);
   
   const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<DifficultyLevel>('B1'); // Default Intermediate
@@ -49,28 +55,55 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY_VOCAB, JSON.stringify(vocabList));
   }, [vocabList]);
 
-  // Initial Load
+  // Initial Load & Security Check
   useEffect(() => {
-    const init = async () => {
-      // Check if user already has an article for today
-      if (history[today]) {
-        setCurrentArticle(history[today]);
-        setSelectedLevel(history[today].difficulty);
-        setAppState(AppState.READING);
-      } else {
-        setAppState(AppState.LOADING);
-        try {
-          const fetchedTopics = await fetchDailyTopics();
-          setTopics(fetchedTopics);
-          setAppState(AppState.TOPIC_SELECTION);
-        } catch (e) {
-          console.error("Failed to init", e);
-          setAppState(AppState.ERROR);
-        }
-      }
-    };
-    init();
+    // 1. Check Site Access (Session based)
+    const accessGranted = sessionStorage.getItem(SESSION_ACCESS_KEY);
+    if (accessGranted === 'true') {
+      setHasSiteAccess(true);
+      initAppData();
+    }
   }, []);
+
+  const initAppData = async () => {
+    // 2. Check User PIN (Local storage based)
+    const storedPin = localStorage.getItem('english_app_pin');
+    if (storedPin) {
+      setIsLocked(true);
+    }
+
+    // 3. Check Article History
+    // We access state inside this async function, but history comes from closure or ref
+    // For safety, we use the initial load logic here mostly for side effects or API calls
+    // However, since we need `history` which is already loaded from useState initializer,
+    // we can check local storage directly or trust the state if this runs once.
+    
+    // Check if user already has an article for today
+    const savedHistoryStr = localStorage.getItem(STORAGE_KEY_HISTORY);
+    const savedHistory = savedHistoryStr ? JSON.parse(savedHistoryStr) : {};
+    
+    if (savedHistory[today]) {
+      setCurrentArticle(savedHistory[today]);
+      setSelectedLevel(savedHistory[today].difficulty);
+      setAppState(AppState.READING);
+    } else {
+      setAppState(AppState.LOADING);
+      try {
+        const fetchedTopics = await fetchDailyTopics();
+        setTopics(fetchedTopics);
+        setAppState(AppState.TOPIC_SELECTION);
+      } catch (e) {
+        console.error("Failed to init", e);
+        setAppState(AppState.ERROR);
+      }
+    }
+  };
+
+  const handleSiteUnlock = () => {
+    sessionStorage.setItem(SESSION_ACCESS_KEY, 'true');
+    setHasSiteAccess(true);
+    initAppData();
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -159,7 +192,41 @@ const App: React.FC = () => {
     setCurrentView('READING');
   };
 
-  // If no API key is provided
+  // Data Import Logic
+  const handleImportData = (newHistory: UserHistory, newVocab: VocabItem[]) => {
+    setHistory(newHistory);
+    setVocabList(newVocab);
+    
+    // Refresh state if current day is affected
+    if (newHistory[today]) {
+      setCurrentArticle(newHistory[today]);
+      setSelectedLevel(newHistory[today].difficulty);
+      if (appState === AppState.TOPIC_SELECTION || appState === AppState.ERROR) {
+        setAppState(AppState.READING);
+      }
+    }
+  };
+
+  const handleClearData = () => {
+    setHistory({});
+    setVocabList([]);
+    localStorage.removeItem(STORAGE_KEY_HISTORY);
+    localStorage.removeItem(STORAGE_KEY_VOCAB);
+    // Reload to reset
+    window.location.reload();
+  };
+
+  // 1. Global Site Gate
+  if (!hasSiteAccess) {
+    return <AccessGate onUnlock={handleSiteUnlock} />;
+  }
+
+  // 2. Personal Data Lock
+  if (isLocked) {
+    return <LoginView onUnlock={() => setIsLocked(false)} />;
+  }
+
+  // 3. API Key Check
   if (!process.env.API_KEY) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50 text-gray-600 p-4">
@@ -206,7 +273,7 @@ const App: React.FC = () => {
             <Menu size={20} />
           </button>
           <span className="font-serif font-bold text-gray-800">
-            {currentView === 'READING' ? 'Daily Reading' : currentView === 'NOTEBOOK' ? 'Notebook' : 'Analysis'}
+            {currentView === 'READING' ? 'Daily Reading' : currentView === 'NOTEBOOK' ? 'Notebook' : currentView === 'SETTINGS' ? 'Settings' : 'Analysis'}
           </span>
           <div className="w-8" /> {/* Spacer */}
         </header>
@@ -271,6 +338,16 @@ const App: React.FC = () => {
               vocabList={vocabList}
               onRemoveWord={handleRemoveVocab}
               onManualAdd={handleManualAddVocab}
+            />
+          )}
+
+          {/* VIEW: SETTINGS */}
+          {currentView === 'SETTINGS' && (
+            <SettingsView
+              history={history}
+              vocabList={vocabList}
+              onImportData={handleImportData}
+              onClearData={handleClearData}
             />
           )}
 

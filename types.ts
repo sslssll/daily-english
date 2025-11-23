@@ -60,7 +60,7 @@ export enum AppState {
   ERROR = 'ERROR'
 }
 
-export type AppView = 'READING' | 'NOTEBOOK' | 'ANALYSIS';
+export type AppView = 'READING' | 'NOTEBOOK' | 'ANALYSIS' | 'SETTINGS';
 
 export interface ChatMessage {
   role: 'user' | 'model';

@@ -1,6 +1,6 @@
 import React from 'react';
 import { UserHistory, AppView } from '../types';
-import { Calendar, CheckCircle2, BookOpen, PanelLeftClose, BookA, Newspaper } from 'lucide-react';
+import { Calendar, CheckCircle2, BookOpen, PanelLeftClose, BookA, Newspaper, Settings } from 'lucide-react';
 
 interface SidebarLeftProps {
   history: UserHistory;
@@ -53,7 +53,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         <button
           onClick={() => onNavigate('READING')}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-            currentView === 'READING' 
+            currentView === 'READING' || currentView === 'ANALYSIS'
               ? 'bg-indigo-50 text-indigo-700' 
               : 'text-gray-600 hover:bg-gray-50'
           }`}
@@ -71,6 +71,17 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
         >
           <BookA className="w-4 h-4" />
           Notebook
+        </button>
+        <button
+          onClick={() => onNavigate('SETTINGS')}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            currentView === 'SETTINGS' 
+              ? 'bg-gray-100 text-gray-900' 
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          Settings & Data
         </button>
       </div>
 
@@ -90,7 +101,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({
           )}
 
           {dates.map((date) => {
-            const isSelected = date === selectedDate && currentView === 'READING';
+            const isSelected = date === selectedDate && (currentView === 'READING' || currentView === 'ANALYSIS');
             const article = history[date];
             
             return (
